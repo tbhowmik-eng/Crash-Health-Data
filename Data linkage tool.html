@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Oregon Crash–Health Data Integration Prototype</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Fonts & minimal styling -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f7f7fb;
+      --card: #ffffff;
+      --ink: #0f172a;
+      --muted: #475569;
+      --brand: #1d4ed8;
+      --brand-2: #10b981;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --border: #e5e7eb;
+      --chip: #eef2ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+    }
+    header {
+      background: linear-gradient(135deg, #1e40af, #1d4ed8);
+      color: #fff; padding: 28px 20px; text-align: center;
+    }
+    header h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: .2px; }
+    header p { margin: 8px 0 0; opacity: .9; }
+
+    .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    .grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+    @media (min-width: 980px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px;
+      box-shadow: 0 1px 2px rgba(16,24,40,.06);
+    }
+    .card h2 { margin: 0 0 8px; font-size: 18px; }
+    .muted { color: var(--muted); font-size: 14px; }
+
+    /* Query list + details */
+    .flex { display: flex; gap: 10px; flex-wrap: wrap; }
+    .list {
+      display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--chip); color: #3730a3; padding: 8px 10px; border-radius: 999px;
+      border: 1px solid #e0e7ff; cursor: pointer;
+    }
+    .pill:hover { background: #e0e7ff; }
+    .details {
+      margin-top: 12px; padding: 12px; border: 1px dashed var(--border); border-radius: 10px; background: #fafafa;
+    }
+    .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; }
+    .chip { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+    .chip.ok { background:#dcfce7; color:#065f46; }
+    .chip.warn { background:#fef9c3; color:#92400e; }
+    .chip.danger { background:#fee2e2; color:#991b1b; }
+
+    /* Filters & buttons */
+    .row { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+    select, button, input {
+      border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background:#fff; color:var(--ink);
+      font: inherit;
+    }
+    button.primary { background: var(--brand); color:#fff; border-color: var(--brand); }
+    button.ghost { background: #fff; color: var(--brand); border-color: var(--brand); }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+
+    /* Map */
+    #map { width: 100%; height: 360px; border-radius: 10px; border: 1px solid var(--border); }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 14px; text-align:left; }
+    th { background: #f8fafc; }
+    tfoot td { font-weight:600; }
+    .right { text-align:right; }
+    .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  </style>
+
+  <!-- Chart.js & Leaflet -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+
+<body>
+  <header>
+    <h1>Oregon Crash–Health Data Integration Prototype</h1>
+    <p>Linked crash, EMS, and hospital data for injury validation, EMS performance, and safety decision support (mock data).</p>
+  </header>
+
+  <main class="container">
+    <section class="card" aria-labelledby="q1">
+      <h2 id="q1">1) Data Linkage & Query Interface</h2>
+      <p class="muted">Select a crash to view its linked EMS and hospital record. “Match confidence” reflects probabilistic linkage strength.</p>
+      <div class="row">
+        <label for="modeFilter" class="muted">Filter by mode:</label>
+        <select id="modeFilter">
+          <option value="All">All</option>
+          <option>Vehicle</option>
+          <option>Pedestrian</option>
+          <option>Cyclist</option>
+        </select>
+
+        <label for="areaFilter" class="muted">Area:</label>
+        <select id="areaFilter">
+          <option value="All">All</option>
+          <option>Urban</option>
+          <option>Rural</option>
+        </select>
+        <button class="ghost" id="resetFilters">Reset</button>
+      </div>
+
+      <div id="crashList" class="list" style="margin-top:12px;"></div>
+      <div id="crashDetails" class="details" hidden></div>
+    </section>
+
+    <div class="grid">
+      <section class="card" aria-labelledby="val">
+        <h2 id="val">2) Injury Severity Validation Dashboard</h2>
+        <p class="muted">Police-reported vs. medical severity counts (mock). Use filters to explore differences by mode and area.</p>
+        <div class="row" style="margin-bottom:8px;">
+          <label for="valMode" class="muted">Mode:</label>
+          <select id="valMode">
+            <option value="All">All</option>
+            <option>Vehicle</option>
+            <option>Pedestrian</option>
+            <option>Cyclist</option>
+          </select>
+          <label for="valArea" class="muted">Area:</label>
+          <select id="valArea">
+            <option value="All">All</option>
+            <option>Urban</option>
+            <option>Rural</option>
+          </select>
+        </div>
+        <canvas id="severityChart" height="240" aria-label="Police vs Medical Severity Chart"></canvas>
+        <p class="note">ODOT value: quickly spot patterns where medical outcomes show greater severity than police classification.</p>
+      </section>
+
+      <section class="card" aria-labelledby="ems">
+        <h2 id="ems">3) EMS Response & Post-Crash Outcomes</h2>
+        <p class="muted">Compare EMS response and transport times. Outcome score is a composite (mock) derived from clinical indicators.</p>
+        <canvas id="emsChart" height="240" aria-label="EMS Response Chart"></canvas>
+        <table style="margin-top:12px;">
+          <thead>
+            <tr><th>Area</th><th class="right">Avg EMS Resp (min)</th><th class="right">Avg Transport (min)</th><th class="right">Outcome Score</th></tr>
+          </thead>
+          <tbody id="emsTableBody"></tbody>
+        </table>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="mapTitle">
+      <h2 id="mapTitle">4) Spatial Visualization Map</h2>
+      <p class="muted">Color-coded markers by medically validated severity (Severe/Critical highlighted). Circles indicate EMS response &gt; 15 min.</p>
+      <div id="map"></div>
+      <p class="note">Map tiles © OpenStreetMap contributors • For prototype use only</p>
+    </section>
+
+    <section class="card" aria-labelledby="sum">
+      <h2 id="sum">5) Summary & Export</h2>
+      <div class="row">
+        <button class="primary" id="exportCsv">Export summary CSV</button>
+        <button id="regen" title="Regenerate mock numbers for demo">Regenerate sample numbers</button>
+      </div>
+
+      <h3 style="margin-top:16px;">Key Indicators (mock)</h3>
+      <table>
+        <thead><tr><th>Indicator</th><th class="right">Value</th></tr></thead>
+        <tbody id="summaryBody">
+          <!-- populated via JS -->
+        </tbody>
+      </table>
+      <p class="note">ODOT value: ready-to-export tables/charts for HSIP, TSAP/Vision Zero, and internal dashboards.</p>
+    </section>
+  </main>
+
+  <script>
+    /***********************
+     * Mock linked dataset *
+     ***********************/
+    const CRASHES = [
+      // id, date, lat, lon ~ Oregon-ish, area, mode, policeSeverity, medicalSeverity, matchConf, emsResp, transport, hosp (mins & costs)
+      {id:1,date:'2023-05-10',loc:'I-84 EB MP 65',lat:45.664,lon:-121.110,area:'Rural',mode:'Vehicle',pol:'Minor',med:'Severe',conf:0.89,ems:18,trans:32,out:70,cost:82000},
+      {id:2,date:'2023-06-18',loc:'US-26 WB MP 42',lat:45.338,lon:-123.914,area:'Rural',mode:'Pedestrian',pol:'Severe',med:'Critical',conf:0.93,ems:22,trans:45,out:62,cost:145000},
+      {id:3,date:'2023-07-03',loc:'OR-99E NB MP 19',lat:44.942,lon:-123.031,area:'Urban',mode:'Cyclist',pol:'Possible',med:'Severe',conf:0.81,ems:9,trans:18,out:85,cost:47000},
+      {id:4,date:'2023-07-22',loc:'SE 82nd & Holgate, PDX',lat:45.478,lon:-122.579,area:'Urban',mode:'Pedestrian',pol:'Minor',med:'Severe',conf:0.87,ems:11,trans:14,out:79,cost:56000},
+      {id:5,date:'2023-08-11',loc:'US-97 NB MP 142',lat:43.907,lon:-121.366,area:'Rural',mode:'Vehicle',pol:'Possible',med:'Minor',conf:0.78,ems:16,trans:28,out:88,cost:9000},
+      {id:6,date:'2023-09-02',loc:'OR-22 EB MP 7',lat:44.931,lon:-123.049,area:'Urban',mode:'Vehicle',pol:'Minor',med:'Minor',conf:0.92,ems:8,trans:12,out:96,cost:4000},
+      {id:7,date:'2023-10-14',loc:'OR-126 MP 17',lat:44.061,lon:-123.112,area:'Urban',mode:'Cyclist',pol:'Minor',med:'Severe',conf:0.84,ems:10,trans:15,out:83,cost:32000},
+      {id:8,date:'2023-11-09',loc:'US-101 MP 196',lat:44.056,lon:-124.104,area:'Rural',mode:'Vehicle',pol:'Minor',med:'Critical',conf:0.90,ems:26,trans:49,out:60,cost:168000}
+    ];
+
+    /*****************
+     * Helper utils  *
+     *****************/
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => Array.from(document.querySelectorAll(sel));
+    function fmtPct(p){ return (p*100).toFixed(0)+'%'; }
+    function fmtMin(m){ return `${m} min`; }
+    function fmtMoney(n){ return '$' + n.toLocaleString(); }
+    function badgeForSeverity(s){
+      if (s === 'Critical') return '<span class="chip danger">Critical</span>';
+      if (s === 'Severe') return '<span class="chip warn">Severe</span>';
+      return '<span class="chip ok">'+s+'</span>';
+    }
+
+    /***********************************
+     * 1) Data Linkage & Query list    *
+     ***********************************/
+    const crashList = $('#crashList');
+    const crashDetails = $('#crashDetails');
+
+    function renderCrashList() {
+      const mode = $('#modeFilter').value;
+      const area = $('#areaFilter').value;
+      const filtered = CRASHES.filter(c =>
+        (mode === 'All' || c.mode === mode) &&
+        (area === 'All' || c.area === area)
+      );
+      crashList.innerHTML = filtered.map(c => `
+        <button class="pill" data-id="${c.id}" aria-label="Open crash ${c.id}">
+          <strong>${c.loc}</strong>
+          <span class="muted">(${c.date})</span>
+        </button>
+      `).join('');
+      crashDetails.hidden = true;
+      $$('#crashList .pill').forEach(btn => btn.addEventListener('click', () => openCrash(+btn.dataset.id)));
+    }
+
+    function openCrash(id){
+      const c = CRASHES.find(x => x.id === id);
+      crashDetails.hidden = false;
+      crashDetails.innerHTML = `
+        <div class="kv">
+          <div><strong>Crash ID</strong></div><div>${c.id}</div>
+          <div><strong>Date</strong></div><div>${c.date}</div>
+          <div><strong>Location</strong></div><div>${c.loc}</div>
+          <div><strong>Area</strong></div><div>${c.area}</div>
+          <div><strong>Mode</strong></div><div>${c.mode}</div>
+          <div><strong>Police Severity</strong></div><div>${badgeForSeverity(c.pol)}</div>
+          <div><strong>Medical Severity</strong></div><div>${badgeForSeverity(c.med)}</div>
+          <div><strong>Match Confidence</strong></div><div>${fmtPct(c.conf)}</div>
+          <div><strong>EMS Response</strong></div><div>${fmtMin(c.ems)}</div>
+          <div><strong>Transport Time</strong></div><div>${fmtMin(c.trans)}</div>
+          <div><strong>Outcome Score</strong></div><div class="mono">${c.out}</div>
+          <div><strong>Est. Hospital Cost</strong></div><div class="mono">${fmtMoney(c.cost)}</div>
+        </div>
+      `;
+    }
+
+    $('#modeFilter').addEventListener('change', renderCrashList);
+    $('#areaFilter').addEventListener('change', renderCrashList);
+    $('#resetFilters').addEventListener('click', () => {
+      $('#modeFilter').value = 'All';
+      $('#areaFilter').value = 'All';
+      renderCrashList();
+    });
+
+    /**********************************************
+     * 2) Injury Severity Validation (Chart.js)   *
+     **********************************************/
+    const severityCtx = document.getElementById('severityChart');
+    let severityChart;
+
+    function computeSeveritySummary(mode='All', area='All'){
+      const rows = CRASHES.filter(c =>
+        (mode==='All'||c.mode===mode) && (area==='All'||c.area===area)
+      );
+      // Count where medical severity >= severe vs police classification
+      const cats = ['Vehicle','Pedestrian','Cyclist'];
+      const policeCounts = cats.map(cat => rows.filter(r => r.mode===cat && (r.pol==='Severe'||r.pol==='Critical')).length);
+      const medicalCounts = cats.map(cat => rows.filter(r => r.mode===cat && (r.med==='Severe'||r.med==='Critical')).length);
+      return { cats, policeCounts, medicalCounts };
+    }
+
+    function renderSeverityChart(){
+      const mode = $('#valMode').value;
+      const area = $('#valArea').value;
+      const { cats, policeCounts, medicalCounts } = computeSeveritySummary(mode, area);
+      const data = {
+        labels: cats,
+        datasets: [
+          { label: 'Police-reported severe/critical', data: policeCounts },
+          { label: 'Medically validated severe/critical', data: medicalCounts }
+        ]
+      };
+      if (severityChart) severityChart.destroy();
+      severityChart = new Chart(severityCtx, {
+        type: 'bar',
+        data,
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: { mode: 'index', intersect: false }
+          },
+          scales: { y: { beginAtZero: true, ticks: { precision:0 } } }
+        }
+      });
+    }
+    $('#valMode').addEventListener('change', renderSeverityChart);
+    $('#valArea').addEventListener('change', renderSeverityChart);
+
+    /*******************************************
+     * 3) EMS Response & Outcomes (Chart.js)   *
+     *******************************************/
+    const emsCtx = document.getElementById('emsChart');
+    let emsChart;
+
+    function computeEmsSummary(){
+      const urban = CRASHES.filter(c => c.area==='Urban');
+      const rural = CRASHES.filter(c => c.area==='Rural');
+      const sum = arr => arr.reduce((a,b)=>a+b,0);
+      const avg = arr => arr.length ? Math.round(sum(arr)/arr.length) : 0;
+      const s = (rows) => ({
+        avgEMS: avg(rows.map(r=>r.ems)),
+        avgTrans: avg(rows.map(r=>r.trans)),
+        out: avg(rows.map(r=>r.out))
+      });
+      return {
+        urban: s(urban),
+        rural: s(rural)
+      };
+    }
+
+    function renderEms(){
+      const { urban, rural } = computeEmsSummary();
+      const labels = ['Avg EMS response (min)','Avg transport (min)','Outcome score'];
+      const u = [urban.avgEMS, urban.avgTrans, urban.out];
+      const r = [rural.avgEMS, rural.avgTrans, rural.out];
+      if (emsChart) emsChart.destroy();
+      emsChart = new Chart(emsCtx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Urban', data: u },
+            { label: 'Rural', data: r }
+          ]
+        },
+        options: {
+          responsive:true,
+          plugins:{ legend:{ position:'top' } },
+          scales: { y: { beginAtZero:true } }
+        }
+      });
+
+      // Table rows
+      const tbody = $('#emsTableBody');
+      tbody.innerHTML = `
+        <tr><td>Urban</td><td class="right mono">${computeEmsSummary().urban.avgEMS}</td><td class="right mono">${computeEmsSummary().urban.avgTrans}</td><td class="right mono">${computeEmsSummary().urban.out}</td></tr>
+        <tr><td>Rural</td><td class="right mono">${computeEmsSummary().rural.avgEMS}</td><td class="right mono">${computeEmsSummary().rural.avgTrans}</td><td class="right mono">${computeEmsSummary().rural.out}</td></tr>
+      `;
+    }
+
+    /******************************
+     * 4) Map (Leaflet + markers) *
+     ******************************/
+    let map;
+    function initMap(){
+      map = L.map('map').setView([44.94,-123.03], 6.7);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+      renderMarkers();
+    }
+    function colorForMed(sev){
+      if (sev==='Critical') return '#dc2626';
+      if (sev==='Severe') return '#f59e0b';
+      return '#10b981';
+    }
+    function renderMarkers(){
+      // Clear layers first
+      map.eachLayer(l => { if (l instanceof L.CircleMarker || l instanceof L.Marker) map.removeLayer(l); });
+      // Keep base tile layer
+      map.eachLayer(l => { /* keep tile */ });
+
+      CRASHES.forEach(c => {
+        const m = L.circleMarker([c.lat, c.lon], {
+          radius: 8,
+          color: '#111827',
+          fillColor: colorForMed(c.med),
+          fillOpacity: .9,
+          weight: 1
+        }).addTo(map);
+        m.bindPopup(`
+          <strong>${c.loc}</strong><br/>
+          ${c.date} • ${c.area} • ${c.mode}<br/>
+          Police: ${c.pol}<br/>
+          Medical: ${c.med}<br/>
+          EMS: ${c.ems} min • Transport: ${c.trans} min
+        `);
+
+        // EMS delay hotspot ring if response > 15 min
+        if (c.ems > 15) {
+          L.circle([c.lat, c.lon], {radius: 8000, color:'#ef4444', fill:false, weight:1.2, dashArray:'6 4'}).addTo(map);
+        }
+      });
+    }
+
+    /****************************
+     * 5) Summary + CSV export  *
+     ****************************/
+    function computeSummary(){
+      const total = CRASHES.length;
+      const misclassified = CRASHES.filter(c => {
+        const pSev = (c.pol==='Severe'||c.pol==='Critical');
+        const mSev = (c.med==='Severe'||c.med==='Critical');
+        return pSev !== mSev;
+      }).length;
+      const avgEmsUrban = Math.round(CRASHES.filter(c=>c.area==='Urban').reduce((a,b)=>a+b.ems,0) / Math.max(1, CRASHES.filter(c=>c.area==='Urban').length));
+      const avgEmsRural = Math.round(CRASHES.filter(c=>c.area==='Rural').reduce((a,b)=>a+b.ems,0) / Math.max(1, CRASHES.filter(c=>c.area==='Rural').length));
+      const diffEms = avgEmsRural - avgEmsUrban;
+      const totalCost = CRASHES.reduce((a,b)=>a+b.cost,0);
+      return { total, misclassified, misRate: (misclassified/Math.max(1,total))*100, avgEmsUrban, avgEmsRural, diffEms, totalCost };
+    }
+
+    function renderSummary(){
+      const s = computeSummary();
+      $('#summaryBody').innerHTML = `
+        <tr><td>Records in linked sample</td><td class="right mono">${s.total}</td></tr>
+        <tr><td>Police vs. medical misclassification count</td><td class="right mono">${s.misclassified}</td></tr>
+        <tr><td>Misclassification rate</td><td class="right mono">${s.misRate.toFixed(1)}%</td></tr>
+        <tr><td>EMS response (urban)</td><td class="right mono">${s.avgEmsUrban} min</td></tr>
+        <tr><td>EMS response (rural)</td><td class="right mono">${s.avgEmsRural} min</td></tr>
+        <tr><td>EMS response rural–urban difference</td><td class="right mono">${s.diffEms} min</td></tr>
+        <tr><td>Est. hospital costs (sample, total)</td><td class="right mono">${fmtMoney(s.totalCost)}</td></tr>
+      `;
+    }
+
+    function exportCsv(){
+      const rows = [
+        ['CrashID','Date','Location','Area','Mode','PoliceSeverity','MedicalSeverity','MatchConfidence','EMS(min)','Transport(min)','OutcomeScore','EstHospitalCost'],
+        ...CRASHES.map(c => [c.id,c.date,c.loc,c.area,c.mode,c.pol,c.med,(c.conf*100).toFixed(0)+'%',c.ems,c.trans,c.out,c.cost])
+      ];
+      const csv = rows.map(r => r.map(v => `"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'crash_health_linked_summary.csv'; a.click();
+      URL.revokeObjectURL(url);
+    }
+    $('#exportCsv').addEventListener('click', exportCsv);
+
+    // Demo: regenerate a couple of numbers to show interactivity
+    $('#regen').addEventListener('click', () => {
+      CRASHES.forEach(c => {
+        // vary EMS +/- 2 minutes, cost +/- 10%
+        c.ems = Math.max(5, c.ems + (Math.random()*4-2)|0);
+        c.trans = Math.max(8, c.trans + (Math.random()*6-3)|0);
+        c.cost = Math.round(c.cost * (0.9 + Math.random()*0.2));
+      });
+      renderEms(); renderMarkers(); renderSummary(); renderSeverityChart();
+    });
+
+    /****************
+     * Bootstrap UI *
+     ****************/
+    renderCrashList();
+    renderSeverityChart();
+    renderEms();
+    initMap();
+    renderSummary();
+  </script>
+</body>
+</html>
